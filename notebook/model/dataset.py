@@ -38,10 +38,10 @@ class PretrainDataset(Dataset):
         text = f"{self.tokenizer.bos_token}{str(sample['text'])}{self.tokenizer.eos_token}"
         encoding = self.tokenizer(
             text,
-            max_length=self.max_length, # 512
-            padding='max_length', # 填充到512
-            truncation=True, # 截断
-            return_tensors='pt' # 返回tensor
+            max_length=self.max_length,
+            padding='max_length',
+            truncation=True,
+            return_tensors='pt'
         )
         input_ids = encoding.input_ids.squeeze()
         loss_mask = (input_ids != self.tokenizer.pad_token_id)

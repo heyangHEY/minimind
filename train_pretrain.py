@@ -23,15 +23,35 @@ warnings.filterwarnings('ignore')
 
 
 def Logger(content):
+    """
+    日志打印函数，在分布式训练时只在主进程上打印
+    Args:
+        content: 要打印的内容
+    """
     if not ddp or dist.get_rank() == 0:
         print(content)
 
 
 def get_lr(current_step, total_steps, lr):
+    """
+    获取当前学习率，使用余弦退火策略
+    Args:
+        current_step: 当前步数
+        total_steps: 总步数
+        lr: 初始学习率
+    Returns:
+        当前步数对应的学习率
+    """
     return lr / 10 + 0.5 * lr * (1 + math.cos(math.pi * current_step / total_steps))
 
 
 def train_epoch(epoch, wandb):
+    """
+    训练一个epoch
+    Args:
+        epoch: 当前epoch数
+        wandb: wandb日志工具实例
+    """
     loss_fct = nn.CrossEntropyLoss(reduction='none')
     start_time = time.time()
     for step, (X, Y, loss_mask) in enumerate(train_loader):
@@ -96,13 +116,24 @@ def train_epoch(epoch, wandb):
 
 
 def init_model(lm_config):
+    """
+    初始化模型和分词器
+    Args:
+        lm_config: 语言模型配置
+    Returns:
+        model: 初始化的模型
+        tokenizer: 分词器
+    """
     tokenizer = AutoTokenizer.from_pretrained('./model/minimind_tokenizer')
     model = MiniMindLM(lm_config).to(args.device)
-    Logger(f'LLM总参数量：{sum(p.numel() for p in model.parameters() if p.requires_grad) / 1e6:.3f} 百万')
+    Logger(f'LLM总参数量：{sum(p.numel() for p in model.parameters() if p.requires_grad) / 1e6:.3f} 百万') # 打印模型可训练参数量
     return model, tokenizer
 
 
 def init_distributed_mode():
+    """
+    初始化分布式训练环境
+    """
     if not ddp: return
     global ddp_local_rank, DEVICE
 
@@ -117,41 +148,41 @@ def init_distributed_mode():
 # torchrun --nproc_per_node 2 1-pretrain.py
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="MiniMind Pretraining")
-    parser.add_argument("--out_dir", type=str, default="out")
+    parser.add_argument("--out_dir", type=str, default="out") # 输出目录
     # 若要以最快速度实现zero则epochs设置为1轮；否则应当利用有限的数据训练2~6个epochs。
-    parser.add_argument("--epochs", type=int, default=1)
-    parser.add_argument("--batch_size", type=int, default=32)
-    parser.add_argument("--learning_rate", type=float, default=5e-4)
-    parser.add_argument("--device", type=str, default="cuda:0" if torch.cuda.is_available() else "cpu")
-    parser.add_argument("--dtype", type=str, default="bfloat16")
-    parser.add_argument("--use_wandb", action="store_true")
-    parser.add_argument("--wandb_project", type=str, default="MiniMind-Pretrain")
-    parser.add_argument("--num_workers", type=int, default=1)
-    parser.add_argument("--ddp", action="store_true")
-    parser.add_argument("--accumulation_steps", type=int, default=8)
-    parser.add_argument("--grad_clip", type=float, default=1.0)
-    parser.add_argument("--warmup_iters", type=int, default=0)
-    parser.add_argument("--log_interval", type=int, default=100)
-    parser.add_argument("--save_interval", type=int, default=100)
-    parser.add_argument('--local_rank', type=int, default=-1)
-    parser.add_argument('--dim', default=512, type=int)
-    parser.add_argument('--n_layers', default=8, type=int)
-    parser.add_argument('--max_seq_len', default=512, type=int)
-    parser.add_argument('--use_moe', default=False, type=bool)
-    parser.add_argument("--data_path", type=str, default="./dataset/pretrain_hq.jsonl")
+    parser.add_argument("--epochs", type=int, default=1) # 训练轮数
+    parser.add_argument("--batch_size", type=int, default=32) # 批量大小
+    parser.add_argument("--learning_rate", type=float, default=5e-4) # 学习率
+    parser.add_argument("--device", type=str, default="cuda:0" if torch.cuda.is_available() else "cpu") # 设备
+    parser.add_argument("--dtype", type=str, default="bfloat16") # 默认使用bfloat16
+    parser.add_argument("--use_wandb", action="store_true") # 是否使用wandb
+    parser.add_argument("--wandb_project", type=str, default="MiniMind-Pretrain") # wandb项目名
+    parser.add_argument("--num_workers", type=int, default=1) # 数据加载器工作线程数
+    parser.add_argument("--ddp", action="store_true") # 是否使用ddp
+    parser.add_argument("--accumulation_steps", type=int, default=8) # 梯度累积步数
+    parser.add_argument("--grad_clip", type=float, default=1.0) # 梯度裁剪阈值
+    parser.add_argument("--warmup_iters", type=int, default=0) # 学习率预热步数
+    parser.add_argument("--log_interval", type=int, default=100) # interval 日志打印间隔
+    parser.add_argument("--save_interval", type=int, default=100) # interval 模型保存间隔
+    parser.add_argument('--local_rank', type=int, default=-1) # 本地进程编号
+    parser.add_argument('--dim', default=512, type=int) # 模型维度
+    parser.add_argument('--n_layers', default=8, type=int) # 模型层数
+    parser.add_argument('--max_seq_len', default=512, type=int) # 最大序列长度
+    parser.add_argument('--use_moe', default=False, type=bool) # 是否使用moe
+    parser.add_argument("--data_path", type=str, default="./dataset/pretrain_hq.jsonl") # 数据路径
     args = parser.parse_args()
 
     lm_config = LMConfig(dim=args.dim, n_layers=args.n_layers, max_seq_len=args.max_seq_len, use_moe=args.use_moe)
     args.save_dir = os.path.join(args.out_dir)
     os.makedirs(args.save_dir, exist_ok=True)
     os.makedirs(args.out_dir, exist_ok=True)
-    tokens_per_iter = args.batch_size * lm_config.max_seq_len
+    tokens_per_iter = args.batch_size * lm_config.max_seq_len # 32 * 512 = 16384
     torch.manual_seed(1337)
     device_type = "cuda" if "cuda" in args.device else "cpu"
 
     args.wandb_run_name = f"MiniMind-Pretrain-Epoch-{args.epochs}-BatchSize-{args.batch_size}-LearningRate-{args.learning_rate}"
 
-    ctx = nullcontext() if device_type == "cpu" else torch.cuda.amp.autocast()
+    ctx = nullcontext() if device_type == "cpu" else torch.cuda.amp.autocast() # 自动混合精度
 
     ddp = int(os.environ.get("RANK", -1)) != -1  # is this a ddp run?
     ddp_local_rank, DEVICE = 0, "cuda:0"
@@ -169,7 +200,7 @@ if __name__ == "__main__":
 
     model, tokenizer = init_model(lm_config)
     train_ds = PretrainDataset(args.data_path, tokenizer, max_length=lm_config.max_seq_len)
-    train_sampler = DistributedSampler(train_ds) if ddp else None
+    train_sampler = DistributedSampler(train_ds) if ddp else None # 分布式训练
     train_loader = DataLoader(
         train_ds,
         batch_size=args.batch_size,
@@ -180,7 +211,7 @@ if __name__ == "__main__":
         sampler=train_sampler
     )
 
-    scaler = torch.cuda.amp.GradScaler(enabled=(args.dtype in ['float16', 'bfloat16']))
+    scaler = torch.cuda.amp.GradScaler(enabled=(args.dtype in ['float16', 'bfloat16'])) # 梯度缩放
     optimizer = optim.AdamW(model.parameters(), lr=args.learning_rate)
 
     if ddp:
@@ -190,3 +221,13 @@ if __name__ == "__main__":
     iter_per_epoch = len(train_loader)
     for epoch in range(args.epochs):
         train_epoch(epoch, wandb)
+
+'''
+1. bfloat16, 混合精度 torch.cuda.amp.autocast(), 梯度缩放
+2. ddp, RANK, DistributedSampler
+3. 梯度累积 accumulation_steps
+4. 梯度裁剪 grad_clip
+5. 学习率预热 warmup_iters
+6. 学习率衰减 lr_scheduler
+7. AdamW
+'''
